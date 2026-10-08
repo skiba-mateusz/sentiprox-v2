@@ -1,0 +1,18 @@
+proxy:
+  addr: ":8080"
+
+database:
+  addr: "postgres://admin:password@localhost:5432/sentiprox?sslmode=disable"
+
+ml:
+  addr: "http://localhost:8000"
+  score: 0.5
+  timeout_ms: 100
+  fail_open: true
+  inspect_body_bytes: 16384
+
+routes:
+    - path: /
+      type: pass
+      target: http://localhost:5000
+      ml_check: true

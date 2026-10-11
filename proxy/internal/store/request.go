@@ -18,7 +18,7 @@ type Request struct {
 	Query       string
 	UserAgent   string
 	ContentType string
-	Features    []byte
+	Features    string
 	Route       string
 	Category    string
 	Score       float64

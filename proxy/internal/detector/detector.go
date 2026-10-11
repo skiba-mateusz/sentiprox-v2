@@ -3,6 +3,8 @@ package detector
 import (
 	"bytes"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -67,7 +69,7 @@ func (d *Detector) Wrap(route string, next http.Handler) http.Handler {
 			Query:       r.URL.RawQuery,
 			UserAgent:   r.Header.Get("User-Agent"),
 			ContentType: r.Header.Get("Content-Type"),
-			Features:    []byte(candidate),
+			Features:    candidate,
 			Route:       route,
 			Category:    "benign",
 		}
@@ -78,19 +80,23 @@ func (d *Detector) Wrap(route string, next http.Handler) http.Handler {
 			d.store.Request.Insert(req)
 		}()
 
-		res, err := d.client.Classify(r.Context(), candidate)
-		if err != nil {
-			d.logger.Warnw("classification failed", "err", err, "fail_open", d.cfg.ML.FailOpen)
-			if !d.cfg.ML.FailOpen {
-				action = ErrorAction
-				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		var res client.Result
+		var err error
+
+		if suspicious, _ := prescreen(candidate); suspicious {
+			res, err = d.client.Classify(r.Context(), candidate)
+			if err != nil {
+				d.logger.Warnw("classification failed", "err", err, "fail_open", d.cfg.ML.FailOpen)
+				if !d.cfg.ML.FailOpen {
+					action = ErrorAction
+					http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				next.ServeHTTP(sw, r)
 				return
 			}
-			next.ServeHTTP(w, r)
-			return
+			req.Category, req.Score = res.Category, res.Score
 		}
-
-		req.Category, req.Score = res.Category, res.Score
 
 		if d.isThreat(res) {
 			action = BlockAction
@@ -112,14 +118,9 @@ func (d *Detector) buildCandidate(r *http.Request) string {
 	sb.WriteString(" ")
 	sb.WriteString(r.URL.RawQuery)
 
-	if r.Body != nil && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
-		head, _ := io.ReadAll(io.LimitReader(r.Body, int64(d.cfg.ML.InspectBodyBytes)))
-		r.Body = struct {
-			io.Reader
-			io.Closer
-		}{io.MultiReader(bytes.NewReader(head), r.Body), r.Body}
+	if body := d.bodySample(r); body != "" {
 		sb.WriteString(" ")
-		sb.Write(head)
+		sb.WriteString(body)
 	}
 
 	sb.WriteString(" ")
@@ -128,6 +129,66 @@ func (d *Detector) buildCandidate(r *http.Request) string {
 	sb.WriteString(r.Header.Get("Referer"))
 
 	return normalize(sb.String())
+}
+
+func (d *Detector) bodySample(r *http.Request) string {
+	if r.Body == nil && (r.Method != http.MethodPost && r.Method != http.MethodPut && r.Method != http.MethodPatch) {
+		return ""
+	}
+
+	mt, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		return ""
+	}
+
+	textual := mt == "application/json" ||
+		mt == "application/x-www-form-urlencoded" ||
+		mt == "application/xml" ||
+		strings.HasPrefix(mt, "text/") ||
+		strings.HasSuffix(mt, "+json") ||
+		strings.HasSuffix(mt, "+xml")
+
+	if !textual && mt != "multipart/form-data" {
+		return ""
+	}
+
+	head, _ := io.ReadAll(io.LimitReader(r.Body, int64(d.cfg.ML.InspectBodyBytes)))
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(head), r.Body), r.Body}
+
+	if mt == "multipart/form-data" {
+		return multipartSummary(head, params["boundary"], 4096)
+	}
+
+	return string(head)
+}
+
+func multipartSummary(head []byte, boundary string, maxField int64) string {
+	var sb strings.Builder
+	mr := multipart.NewReader(bytes.NewReader(head), boundary)
+
+	for {
+		p, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		sb.WriteString(p.FormName())
+		sb.WriteString(" ")
+		if fn := p.FileName(); fn != "" {
+			sb.WriteString(fn)
+			sb.WriteString(" ")
+			sb.WriteString(p.Header.Get("Content-Type"))
+			sb.WriteString(" ")
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(p, maxField))
+		sb.Write(b)
+		sb.WriteString(" ")
+	}
+
+	return sb.String()
 }
 
 func normalize(s string) string {

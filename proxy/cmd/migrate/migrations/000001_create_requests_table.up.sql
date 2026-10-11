@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS requests_log (
     query           TEXT,
     user_agent      TEXT,
     content_type    TEXT,
-    features        BYTEA,
+    features        TEXT,
     route           TEXT,
     category        TEXT,
     score           DOUBLE PRECISION,

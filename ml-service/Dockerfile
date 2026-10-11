@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY train.py app.py features.py ./
+COPY train.py app.py features.py dataset.csv ./
 RUN python train.py
 
 EXPOSE 8000

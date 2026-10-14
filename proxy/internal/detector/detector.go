@@ -13,6 +13,7 @@ import (
 
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/client"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/config"
+	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/limiter"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/store"
 	"go.uber.org/zap"
 )
@@ -21,7 +22,9 @@ type Action int
 
 const (
 	PassAction Action = iota
+	AttackAction
 	BlockAction
+	FlagAction
 	ErrorAction
 )
 
@@ -29,8 +32,12 @@ func (a Action) String() string {
 	switch a {
 	case PassAction:
 		return "pass"
+	case AttackAction:
+		return "attack"
 	case BlockAction:
 		return "block"
+	case FlagAction:
+		return "flag"
 	case ErrorAction:
 		return "error"
 	default:
@@ -39,73 +46,123 @@ func (a Action) String() string {
 }
 
 type Detector struct {
-	cfg    *config.Config
-	logger *zap.SugaredLogger
-	store  *store.Storage
-	client client.Client
+	cfg       *config.Config
+	logger    *zap.SugaredLogger
+	store     *store.Storage
+	client    client.Client
+	limiter   limiter.Limiter
+	authPaths map[string]bool
 }
 
-func NewDetector(cfg *config.Config, l *zap.SugaredLogger, c client.Client, s *store.Storage) *Detector {
+func NewDetector(cfg *config.Config, log *zap.SugaredLogger, store *store.Storage, client client.Client, limiter limiter.Limiter) *Detector {
+	authPaths := make(map[string]bool, len(cfg.AuthPaths))
+	for _, path := range cfg.AuthPaths {
+		authPaths[path] = true
+	}
+
 	return &Detector{
-		cfg:    cfg,
-		logger: l,
-		client: c,
-		store:  s,
+		cfg:       cfg,
+		logger:    log,
+		client:    client,
+		store:     store,
+		limiter:   limiter,
+		authPaths: authPaths,
 	}
 }
 
-func (d *Detector) Wrap(route string, next http.Handler) http.Handler {
+func (d *Detector) Wrap(route config.Route, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
-		candidate := d.buildCandidate(r)
+		start := time.Now()
+		ip := clientIP(r)
+		ctx := r.Context()
 		action := PassAction
+		path := strings.TrimSuffix(r.URL.Path, "/")
 
 		req := &store.Request{
 			Timestamp:   start,
-			IP:          clientIP(r),
+			IP:          ip,
 			Method:      r.Method,
-			Path:        r.URL.Path,
+			Path:        path,
 			Query:       r.URL.RawQuery,
 			UserAgent:   r.Header.Get("User-Agent"),
 			ContentType: r.Header.Get("Content-Type"),
-			Features:    candidate,
-			Route:       route,
+			Route:       route.Path,
 			Category:    "benign",
 		}
 		defer func() {
+			status := sw.statusOrDefault()
+			req.StatusCode = status
 			req.Action = action.String()
-			req.StatusCode = sw.statusOrDefault()
 			req.LatencyMS = time.Since(start).Milliseconds()
+
+			if route.BehavioralCheck && action == PassAction {
+				if cat := d.limiter.RecordResponses(ctx, ip, status, d.authPaths[path]); cat != "" {
+					action = FlagAction
+					req.Action = action.String()
+					req.Category = cat
+				}
+			}
+
 			d.store.Request.Insert(req)
 		}()
 
-		var res client.Result
-		var err error
-
-		if suspicious, _ := prescreen(candidate); suspicious {
-			res, err = d.client.Classify(r.Context(), candidate)
-			if err != nil {
-				d.logger.Warnw("classification failed", "err", err, "fail_open", d.cfg.ML.FailOpen)
-				if !d.cfg.ML.FailOpen {
-					action = ErrorAction
-					http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-					return
-				}
-				next.ServeHTTP(sw, r)
-				return
-			}
-			req.Category, req.Score = res.Category, res.Score
+		reject := func(a Action, category string, code int, msg string) {
+			action = a
+			req.Category = category
+			http.Error(sw, msg, code)
 		}
 
-		if d.isThreat(res) {
-			action = BlockAction
-			http.Error(w, "request rejected", http.StatusForbidden)
-			return
+		if route.BehavioralCheck {
+			if ver := d.limiter.Check(ctx, ip); ver.Blocked {
+				code := http.StatusForbidden
+				if ver.Category == limiter.CategoryDOS {
+					code = http.StatusTooManyRequests
+				}
+				reject(BlockAction, ver.Category, code, http.StatusText(code))
+				return
+			}
+		}
+
+		if route.MLCheck {
+			if a, code, msg := d.mlCheck(r, req); a != PassAction {
+				reject(a, req.Category, code, msg)
+				return
+			}
 		}
 
 		next.ServeHTTP(sw, r)
 	})
+}
+
+func (d *Detector) mlCheck(r *http.Request, req *store.Request) (Action, int, string) {
+	candidate := d.buildCandidate(r)
+
+	if d.cfg.ML.SaveFeatures {
+		req.Features = candidate
+	}
+
+	suspicious, _ := prescreen(candidate)
+	if !suspicious {
+		return PassAction, 0, ""
+	}
+
+	res, err := d.client.Classify(r.Context(), candidate)
+	if err != nil {
+		d.logger.Warnw("classification failed", "err", err, "fail_open", d.cfg.ML.FailOpen)
+		if d.cfg.ML.FailOpen {
+			return PassAction, 0, ""
+		}
+		req.Category = "error"
+		return ErrorAction, http.StatusServiceUnavailable, "service unavailable"
+	}
+
+	req.Category, req.Score = res.Category, res.Score
+	if d.isThreat(res) {
+		return AttackAction, http.StatusForbidden, "request rejected"
+	}
+
+	return PassAction, 0, ""
 }
 
 func (d *Detector) isThreat(res client.Result) bool {

@@ -16,7 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type Middleware func(route string, next http.Handler) http.Handler
+type Middleware func(route config.Route, next http.Handler) http.Handler
 
 type Server struct {
 	cfg       *config.Config
@@ -83,9 +83,7 @@ func (s *Server) mount() (http.Handler, error) {
 
 		chiPath := chiPattern(route.Path)
 
-		if route.MLCheck {
-			handler = s.detector(chiPath, handler)
-		}
+		handler = s.detector(route, handler)
 
 		r.Handle(chiPath, handler)
 	}

@@ -10,6 +10,14 @@ services:
     ports:
       - "5432:5432"
 
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass password --save 60 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+
   ml-service:
     build: ./ml-service
     ports:
@@ -31,3 +39,4 @@ services:
 
 volumes:
   db-data:
+  redis-data:

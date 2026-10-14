@@ -12,8 +12,10 @@ import (
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/config"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/db"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/detector"
+	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/limiter"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/proxy"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/store"
+	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/store/cache"
 	"go.uber.org/zap"
 )
 
@@ -36,8 +38,19 @@ func main() {
 	store := store.NewStorage(logger, pool)
 	defer store.Request.Close()
 
+	rdb := cache.NewRedisClient(
+		cfg.Cache.Addr,
+		cfg.Cache.Pass,
+		cfg.Cache.DB,
+	)
+	logger.Info("redis cache connection established")
+	defer rdb.Close()
+
+	cache := cache.NewStorage(rdb)
+
+	limiter := limiter.NewBehavioralLimiter(cfg.Cache, logger, cache)
 	mlClient := client.NewMLClient(cfg.ML.Addr, time.Duration(cfg.ML.TimeoutMS)*time.Millisecond)
-	detector := detector.NewDetector(cfg, logger, mlClient, store)
+	detector := detector.NewDetector(cfg, logger, store, mlClient, limiter)
 
 	srv := proxy.NewServer(cfg, logger, store, detector.Wrap)
 

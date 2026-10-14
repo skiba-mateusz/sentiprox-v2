@@ -4,15 +4,32 @@ proxy:
 database:
   addr: "postgres://admin:password@localhost:5432/sentiprox?sslmode=disable"
 
+cache:
+  addr: "localhost:6379"
+  pass: "password"
+  db: 0
+  dos_window_sec: 10
+  dos_max: 100
+  bruteforce_window_sec: 60
+  bruteforce_max: 10
+  scan_window_sec: 30
+  scan_max: 30
+  block_ttl_sec: 10
+
 ml:
   addr: "http://localhost:8000"
   score: 0.5
   timeout_ms: 100
   fail_open: true
   inspect_body_bytes: 16384
+  save_features: true
+
+auth_paths:
+    - "/vulnerabilities/brute/"
 
 routes:
     - path: /
       type: pass
       target: http://localhost:5000
       ml_check: true
+      behavioral_check: true

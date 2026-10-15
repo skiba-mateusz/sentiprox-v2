@@ -13,6 +13,9 @@ type BlocklistStore struct {
 }
 
 func (s *BlocklistStore) IsBlocked(ctx context.Context, ip string) (string, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
 	reason, err := s.rdb.Get(ctx, "block:"+ip).Result()
 	if errors.Is(err, redis.Nil) {
 		return "", false, nil
@@ -24,5 +27,8 @@ func (s *BlocklistStore) IsBlocked(ctx context.Context, ip string) (string, bool
 }
 
 func (s *BlocklistStore) Add(ctx context.Context, ip, reason string, ttlSec int) error {
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
 	return s.rdb.Set(ctx, "block:"+ip, reason, time.Duration(ttlSec)*time.Second).Err()
 }

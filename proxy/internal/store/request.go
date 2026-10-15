@@ -20,6 +20,7 @@ type Request struct {
 	ContentType string
 	Features    string
 	Route       string
+	Source      string
 	Category    string
 	Score       float64
 	Action      string
@@ -52,14 +53,14 @@ func (s *RequestStore) Insert(req *Request) {
 func (s *RequestStore) flush(batch []*Request) error {
 	rows := make([][]any, len(batch))
 	for i, r := range batch {
-		rows[i] = []any{r.Timestamp, r.IP, r.Method, r.Path, r.Query, r.UserAgent, r.ContentType, r.Features, r.Route, r.Category, r.Score, r.Action, r.StatusCode, r.LatencyMS}
+		rows[i] = []any{r.Timestamp, r.IP, r.Method, r.Path, r.Query, r.UserAgent, r.ContentType, r.Features, r.Route, r.Source, r.Category, r.Score, r.Action, r.StatusCode, r.LatencyMS}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	ctx, cancel := context.WithTimeout(context.Background(), QueryTimeoutDuration)
 	defer cancel()
 
 	_, err := s.pg.Pool.CopyFrom(ctx,
-		pgx.Identifier{"requests_log"}, []string{"timestamp", "ip", "method", "path", "query", "user_agent", "content_type", "features", "route", "category", "score", "action", "status_code", "latency_ms"},
+		pgx.Identifier{"requests_log"}, []string{"timestamp", "ip", "method", "path", "query", "user_agent", "content_type", "features", "route", "source", "category", "score", "action", "status_code", "latency_ms"},
 		pgx.CopyFromRows(rows),
 	)
 	return err

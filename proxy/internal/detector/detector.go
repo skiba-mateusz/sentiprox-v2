@@ -2,6 +2,7 @@ package detector
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -18,33 +19,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type Action int
-
-const (
-	PassAction Action = iota
-	AttackAction
-	BlockAction
-	FlagAction
-	ErrorAction
-)
-
-func (a Action) String() string {
-	switch a {
-	case PassAction:
-		return "pass"
-	case AttackAction:
-		return "attack"
-	case BlockAction:
-		return "block"
-	case FlagAction:
-		return "flag"
-	case ErrorAction:
-		return "error"
-	default:
-		return "unknown"
-	}
-}
-
 type Detector struct {
 	cfg       *config.Config
 	logger    *zap.SugaredLogger
@@ -57,7 +31,7 @@ type Detector struct {
 func NewDetector(cfg *config.Config, log *zap.SugaredLogger, store *store.Storage, client client.Client, limiter limiter.Limiter) *Detector {
 	authPaths := make(map[string]bool, len(cfg.AuthPaths))
 	for _, path := range cfg.AuthPaths {
-		authPaths[path] = true
+		authPaths[normalizePath(path)] = true
 	}
 
 	return &Detector{
@@ -72,70 +46,65 @@ func NewDetector(cfg *config.Config, log *zap.SugaredLogger, store *store.Storag
 
 func (d *Detector) Wrap(route config.Route, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sw := &statusWriter{ResponseWriter: w}
 		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w}
 		ip := clientIP(r)
-		ctx := r.Context()
-		action := PassAction
-		path := strings.TrimSuffix(r.URL.Path, "/")
+		path := normalizePath(r.URL.Path)
 
 		req := &store.Request{
 			Timestamp:   start,
 			IP:          ip,
 			Method:      r.Method,
-			Path:        path,
+			Path:        r.URL.Path,
 			Query:       r.URL.RawQuery,
 			UserAgent:   r.Header.Get("User-Agent"),
 			ContentType: r.Header.Get("Content-Type"),
 			Route:       route.Path,
-			Category:    "benign",
+			Category:    CategoryBenign,
 		}
+		decision := pass
+
 		defer func() {
 			status := sw.statusOrDefault()
-			req.StatusCode = status
-			req.Action = action.String()
-			req.LatencyMS = time.Since(start).Milliseconds()
 
-			if route.BehavioralCheck && action == PassAction {
-				if cat := d.limiter.RecordResponses(ctx, ip, status, d.authPaths[path]); cat != "" {
-					action = FlagAction
-					req.Action = action.String()
-					req.Category = cat
+			if route.BehavioralCheck && decision.Action == ActionPass {
+				if cat := d.recordBehavior(r.Context(), ip, path, status); cat != "" {
+					decision = flag(SourceBehavioral, cat)
 				}
 			}
 
-			d.store.Request.Insert(req)
+			d.save(req, decision, status, start)
 		}()
 
-		reject := func(a Action, category string, code int, msg string) {
-			action = a
-			req.Category = category
-			http.Error(sw, msg, code)
-		}
-
-		if route.BehavioralCheck {
-			if ver := d.limiter.Check(ctx, ip); ver.Blocked {
-				code := http.StatusForbidden
-				if ver.Category == limiter.CategoryDOS {
-					code = http.StatusTooManyRequests
-				}
-				reject(BlockAction, ver.Category, code, http.StatusText(code))
-				return
-			}
-		}
-
-		if route.MLCheck {
-			if a, code, msg := d.mlCheck(r, req); a != PassAction {
-				reject(a, req.Category, code, msg)
-				return
-			}
+		decision = d.inspect(r, route, req, ip)
+		if decision.Blocked() {
+			http.Error(sw, http.StatusText(decision.Status), decision.Status)
+			return
 		}
 
 		next.ServeHTTP(sw, r)
 	})
 }
 
-func (d *Detector) mlCheck(r *http.Request, req *store.Request) (Action, int, string) {
+func (d *Detector) inspect(r *http.Request, route config.Route, req *store.Request, ip string) Decision {
+	if route.BehavioralCheck {
+		if ver := d.limiter.Check(r.Context(), ip); ver.Blocked {
+			status := http.StatusForbidden
+			if ver.Category == limiter.CategoryDOS {
+				status = http.StatusTooManyRequests
+			}
+			return block(SourceBehavioral, ver.Category, status)
+		}
+	}
+
+	if route.MLCheck {
+		return d.mlCheck(r, req)
+	}
+
+	return pass
+}
+
+func (d *Detector) mlCheck(r *http.Request, req *store.Request) Decision {
 	candidate := d.buildCandidate(r)
 
 	if d.cfg.ML.SaveFeatures {
@@ -144,25 +113,40 @@ func (d *Detector) mlCheck(r *http.Request, req *store.Request) (Action, int, st
 
 	suspicious, _ := prescreen(candidate)
 	if !suspicious {
-		return PassAction, 0, ""
+		return pass
 	}
 
 	res, err := d.client.Classify(r.Context(), candidate)
 	if err != nil {
 		d.logger.Warnw("classification failed", "err", err, "fail_open", d.cfg.ML.FailOpen)
 		if d.cfg.ML.FailOpen {
-			return PassAction, 0, ""
+			return pass
 		}
-		req.Category = "error"
-		return ErrorAction, http.StatusServiceUnavailable, "service unavailable"
+		return block(SourceSystem, CategoryUnknown, http.StatusServiceUnavailable)
 	}
 
 	req.Category, req.Score = res.Category, res.Score
 	if d.isThreat(res) {
-		return AttackAction, http.StatusForbidden, "request rejected"
+		return block(SourceML, res.Category, http.StatusForbidden)
 	}
 
-	return PassAction, 0, ""
+	return pass
+}
+
+func (d *Detector) recordBehavior(ctx context.Context, ip, path string, status int) string {
+	return d.limiter.RecordResponses(ctx, ip, status, d.authPaths[path])
+}
+
+func (d *Detector) save(req *store.Request, dec Decision, status int, start time.Time) {
+	req.StatusCode = status
+	req.Action = string(dec.Action)
+	req.Source = string(dec.Source)
+	if dec.Category != "" {
+		req.Category = dec.Category
+	}
+	req.LatencyMS = time.Since(start).Milliseconds()
+
+	d.store.Request.Insert(req)
 }
 
 func (d *Detector) isThreat(res client.Result) bool {
@@ -258,6 +242,16 @@ func normalize(s string) string {
 		cur = dec
 	}
 	return strings.ToLower(cur)
+}
+
+func normalizePath(p string) string {
+	if len(p) > 1 {
+		p = strings.TrimSuffix(p, "/")
+		if p == "" {
+			return "/"
+		}
+	}
+	return p
 }
 
 func clientIP(r *http.Request) string {

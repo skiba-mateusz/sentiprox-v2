@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS requests_log (
     content_type    TEXT,
     features        TEXT,
     route           TEXT,
+    source          TEXT,
     category        TEXT,
     score           DOUBLE PRECISION,
     action          TEXT,

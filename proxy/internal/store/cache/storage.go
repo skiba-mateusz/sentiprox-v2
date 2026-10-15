@@ -2,8 +2,13 @@ package cache
 
 import (
 	"context"
+	"time"
 
 	"github.com/redis/go-redis/v9"
+)
+
+const (
+	queryTimeoutDuration = time.Duration(time.Millisecond * 500)
 )
 
 type Storage struct {

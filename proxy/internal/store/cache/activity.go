@@ -17,5 +17,8 @@ var incrWindowScript = redis.NewScript(`
 	`)
 
 func (s *ActivityStore) IncrWindow(ctx context.Context, key string, windowSec int) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
 	return incrWindowScript.Run(ctx, s.rdb, []string{key}, windowSec).Int64()
 }

@@ -3,10 +3,16 @@ package cache
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
+
+type BlockedEntry struct {
+	IP  string `json:"ip"`
+	TTL int    `josn:"ttl"`
+}
 
 type BlocklistStore struct {
 	rdb *redis.Client
@@ -24,6 +30,34 @@ func (s *BlocklistStore) IsBlocked(ctx context.Context, ip string) (string, bool
 		return "", false, err
 	}
 	return reason, true, nil
+}
+
+func (s *BlocklistStore) List(ctx context.Context) ([]BlockedEntry, error) {
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	results := []BlockedEntry{}
+
+	iter := s.rdb.Scan(ctx, 0, "block:*", 500).Iterator()
+
+	for iter.Next(ctx) {
+		key := iter.Val()
+		if key == "" {
+			continue
+		}
+
+		ttl, err := s.rdb.TTL(ctx, key).Result()
+		if err != nil {
+			return results, err
+		}
+
+		results = append(results, BlockedEntry{
+			IP:  strings.TrimPrefix(key, "block:"),
+			TTL: int(ttl.Seconds()),
+		})
+	}
+
+	return results, iter.Err()
 }
 
 func (s *BlocklistStore) Add(ctx context.Context, ip, reason string, ttlSec int) error {

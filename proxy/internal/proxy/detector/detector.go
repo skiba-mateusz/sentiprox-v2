@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/client"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/config"
-	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/limiter"
+	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/proxy/client"
+	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/proxy/limiter"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/store"
 	"go.uber.org/zap"
 )

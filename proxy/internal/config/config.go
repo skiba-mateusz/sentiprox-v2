@@ -27,6 +27,10 @@ type Proxy struct {
 	Addr string `yaml:"addr"`
 }
 
+type Dashboard struct {
+	Addr string `yaml:"addr"`
+}
+
 type Database struct {
 	Addr string `yaml:"addr"`
 }
@@ -56,6 +60,7 @@ type ML struct {
 
 type Config struct {
 	Proxy     *Proxy
+	Dashboard *Dashboard
 	Database  *Database
 	Cache     *Cache
 	ML        *ML

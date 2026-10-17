@@ -1,6 +1,9 @@
 proxy:
   addr: ":8080"
 
+dashboard:
+  addr: ":8090"
+
 database:
   addr: "postgres://admin:password@localhost:5432/sentiprox?sslmode=disable"
 
@@ -25,11 +28,11 @@ ml:
   save_features: true
 
 auth_paths:
-    - "/vulnerabilities/brute/"
+  - "/vulnerabilities/brute/"
 
 routes:
-    - path: /
-      type: pass
-      target: http://localhost:5000
-      ml_check: true
-      behavioral_check: true
+  - path: /
+    type: pass
+    target: http://localhost:5000
+    ml_check: true
+    behavioral_check: true

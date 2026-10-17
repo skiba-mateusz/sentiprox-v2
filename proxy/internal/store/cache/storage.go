@@ -14,6 +14,7 @@ const (
 type Storage struct {
 	Blocklist interface {
 		IsBlocked(ctx context.Context, ip string) (string, bool, error)
+		List(ctx context.Context) ([]BlockedEntry, error)
 		Add(ctx context.Context, ip, reason string, ttlSec int) error
 	}
 	Activity interface {

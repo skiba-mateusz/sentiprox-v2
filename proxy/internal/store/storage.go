@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"time"
 
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/db"
@@ -13,6 +14,10 @@ const (
 
 type Storage struct {
 	Request interface {
+		List(ctx context.Context, query PaginatedQuery) ([]Request, error)
+		Stats(ctx context.Context) (Stats, error)
+		Timeseries(ctx context.Context) ([]Timeserie, error)
+		Categories(ctx context.Context) ([]Category, error)
 		Insert(req *Request)
 		Close()
 	}

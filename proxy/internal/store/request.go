@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -227,7 +228,12 @@ func (s *RequestStore) getCount(ctx context.Context) (int, error) {
 	row := s.pg.Pool.QueryRow(ctx, query)
 
 	if err := row.Scan(&count); err != nil {
-		return 0, err
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return 0, nil
+		default:
+			return 0, err
+		}
 	}
 
 	return count, nil
@@ -246,7 +252,12 @@ func (s *RequestStore) getAttacksCount(ctx context.Context) (int, error) {
 	row := s.pg.Pool.QueryRow(ctx, query)
 
 	if err := row.Scan(&count); err != nil {
-		return 0, err
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return 0, nil
+		default:
+			return 0, err
+		}
 	}
 
 	return count, nil
@@ -266,7 +277,12 @@ func (s *RequestStore) getTopCategory(ctx context.Context) (string, int, error) 
 	row := s.pg.Pool.QueryRow(ctx, query)
 
 	if err := row.Scan(&top, &count); err != nil {
-		return "", 0, err
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return "", 0, nil
+		default:
+			return "", 0, err
+		}
 	}
 
 	return top, count, nil

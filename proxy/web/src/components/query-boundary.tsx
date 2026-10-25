@@ -1,6 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
+import { Loader } from "./ui/loader";
+import { Button } from "./ui/button";
 
 type Props<T> = {
   query: UseQueryResult<T>;
@@ -15,18 +16,20 @@ export function QueryBoundary<T>({
   isEmpty,
   emptyText = "No data to display",
 }: Props<T>) {
-  if (query.isPending) return <Loader2 />;
+  if (query.isPending) return <Loader />;
 
   if (query.isError) {
     return (
-      <div role="alert">
-        <p>Error: {query.error.message}</p>
-        <button onClick={() => query.refetch()}>Try again</button>
+      <div className="alert">
+        <p>{query.error.message}</p>
+        <Button size="small" onClick={() => query.refetch()}>
+          Try again
+        </Button>
       </div>
     );
   }
 
-  if (isEmpty?.(query.data)) return <p>{emptyText}</p>;
+  if (isEmpty?.(query.data)) return <div className="message">{emptyText}</div>;
 
   return <>{children(query.data)}</>;
 }

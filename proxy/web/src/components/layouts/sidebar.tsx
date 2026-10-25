@@ -23,7 +23,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <nav className="nav flow">
-        <div className="heading fs-h4">Menu</div>
+        <div className="sidebar__title">Menu</div>
         <ul className="nav__list">
           {navlinks.map((navlink) => (
             <li className="nav__item">

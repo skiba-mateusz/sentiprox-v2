@@ -1,11 +1,28 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import type { RequestsParams } from "@/types/api";
 
 export const requestKeys = {
   all: ["requests"] as const,
   summary: () => [...requestKeys.all, "summary"] as const,
   categories: () => [...requestKeys.all, "categories"] as const,
   timeseries: () => [...requestKeys.all, "timeseries"] as const,
+};
+
+export const useLogs = (params: RequestsParams) => {
+  return useQuery({
+    queryKey: [
+      requestKeys.all,
+      params.page,
+      params.searchQuery,
+      params.method,
+      params.since,
+      params.to,
+    ],
+    queryFn: () => api.logs(params),
+    refetchInterval: 30 * 1000,
+    placeholderData: keepPreviousData,
+  });
 };
 
 export const useSummary = () => {

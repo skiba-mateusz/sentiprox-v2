@@ -31,7 +31,7 @@ func NewRequestsHandler(cfg *config.Config, logger *zap.SugaredLogger, store *st
 func (h *RequestsHandler) List(r *http.Request) (any, error) {
 	query := store.PaginatedQuery{
 		Limit:  20,
-		Offset: 20,
+		Offset: 0,
 	}
 
 	query, err := query.Parse(r)

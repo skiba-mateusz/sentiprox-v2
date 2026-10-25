@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -61,23 +63,66 @@ func newRequestStore(l *zap.SugaredLogger, pg *db.PG) *RequestStore {
 	return s
 }
 
-func (s *RequestStore) List(ctx context.Context, q PaginatedQuery) ([]Request, error) {
-	query := `
+func (s *RequestStore) List(ctx context.Context, q PaginatedQuery) (Paginated[[]Request], error) {
+	var queryBuilder strings.Builder
+	args := []any{}
+
+	queryBuilder.WriteString(`
 		SELECT
-			id, timestamp, ip, method, path, query, user_agent, content_type, route, source, category, score, action, status_code, latency_ms
+			id, timestamp, ip, method, path, query, user_agent, content_type, route, source, category, score, action, status_code, latency_ms,
+			COUNT(*) OVER() AS total
 		FROM requests_log
-		OFFSET $1 LIMIT $2
-	`
+		WHERE 1=1
+	`)
+
+	if q.Search != "" {
+		args = append(args, "%"+q.Search+"%")
+		searchPlaceholder := fmt.Sprintf("$%d", len(args))
+
+		fmt.Fprintf(&queryBuilder, `
+			AND (
+				ip ILIKE %[1]s
+				OR path ILIKE %[1]s
+				OR query ILIKE %[1]s
+				OR status_code::TEXT ILIKE %[1]s
+			)
+			`, searchPlaceholder)
+	}
+
+	if q.Method != "" {
+		args = append(args, q.Method)
+		fmt.Fprintf(&queryBuilder, ` AND method ILIKE $%d`, len(args))
+	}
+
+	if q.Since != "" {
+		args = append(args, q.Since)
+		fmt.Fprintf(&queryBuilder, ` AND timestamp >= $%d`, len(args))
+	}
+
+	if q.To != "" {
+		args = append(args, q.To)
+		fmt.Fprintf(&queryBuilder, ` AND timestamp <= $%d`, len(args))
+	}
+
+	args = append(args, q.Offset, q.Limit)
+	fmt.Fprintf(&queryBuilder, `
+		ORDER BY timestamp DESC
+		OFFSET $%d LIMIT $%d
+	`, len(args)-1, len(args))
 
 	ctx, cancel := context.WithTimeout(ctx, QueryTimeoutDuration)
 	defer cancel()
 
-	rows, err := s.pg.Pool.Query(ctx, query, q.Offset, q.Limit)
+	fmt.Println(queryBuilder.String())
+	fmt.Println(q)
+
+	rows, err := s.pg.Pool.Query(ctx, queryBuilder.String(), args...)
 	if err != nil {
-		return nil, err
+		return Paginated[[]Request]{}, err
 	}
 	defer rows.Close()
 
+	var total int
 	requests := []Request{}
 
 	for rows.Next() {
@@ -99,19 +144,23 @@ func (s *RequestStore) List(ctx context.Context, q PaginatedQuery) ([]Request, e
 			&r.Action,
 			&r.StatusCode,
 			&r.LatencyMS,
+			&total,
 		)
 		if err != nil {
-			return nil, err
+			return Paginated[[]Request]{}, err
 		}
 
 		requests = append(requests, r)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return Paginated[[]Request]{}, err
 	}
 
-	return requests, nil
+	return Paginated[[]Request]{
+		Items: requests,
+		Total: total,
+	}, nil
 }
 
 func (s *RequestStore) Timeseries(ctx context.Context) ([]Timeserie, error) {

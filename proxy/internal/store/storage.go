@@ -14,7 +14,7 @@ const (
 
 type Storage struct {
 	Request interface {
-		List(ctx context.Context, query PaginatedQuery) ([]Request, error)
+		List(ctx context.Context, query PaginatedQuery) (Paginated[[]Request], error)
 		Stats(ctx context.Context) (Stats, error)
 		Timeseries(ctx context.Context) ([]Timeserie, error)
 		Categories(ctx context.Context) ([]Category, error)

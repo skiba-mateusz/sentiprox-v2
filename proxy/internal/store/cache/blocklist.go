@@ -66,3 +66,10 @@ func (s *BlocklistStore) Add(ctx context.Context, ip, reason string, ttlSec int)
 
 	return s.rdb.Set(ctx, "block:"+ip, reason, time.Duration(ttlSec)*time.Second).Err()
 }
+
+func (s *BlocklistStore) Delete(ctx context.Context, ip string) error {
+	ctx, cancel := context.WithTimeout(ctx, queryTimeoutDuration)
+	defer cancel()
+
+	return s.rdb.Del(ctx, "block:"+ip).Err()
+}

@@ -16,6 +16,7 @@ type Storage struct {
 		IsBlocked(ctx context.Context, ip string) (string, bool, error)
 		List(ctx context.Context) ([]BlockedEntry, error)
 		Add(ctx context.Context, ip, reason string, ttlSec int) error
+		Delete(ctx context.Context, ip string) error
 	}
 	Activity interface {
 		IncrWindow(ctx context.Context, key string, windowSec int) (int64, error)

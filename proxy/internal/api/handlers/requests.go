@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/api/respond"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/config"
 	"github.com/skiba-mateusz/sentiprox-v2/proxy/internal/store"
@@ -76,4 +77,10 @@ func (h *RequestsHandler) Categories(r *http.Request) (any, error) {
 
 func (h *RequestsHandler) Blocklist(r *http.Request) (any, error) {
 	return h.cache.Blocklist.List(r.Context())
+}
+
+func (h *RequestsHandler) BlocklistDelete(r *http.Request) (any, error) {
+	ip := chi.URLParam(r, "ip")
+
+	return nil, h.cache.Blocklist.Delete(r.Context(), ip)
 }

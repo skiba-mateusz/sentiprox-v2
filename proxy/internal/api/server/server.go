@@ -61,7 +61,11 @@ func (s *APIServer) mount() http.Handler {
 			r.Get("/summary", s.requestsHandler.Handle(s.requestsHandler.Summary))
 			r.Get("/timeseries", s.requestsHandler.Handle(s.requestsHandler.Timeseries))
 			r.Get("/categories", s.requestsHandler.Handle(s.requestsHandler.Categories))
-			r.Get("/blocklist", s.requestsHandler.Handle(s.requestsHandler.Blocklist))
+
+			r.Route("/blocklist", func(r chi.Router) {
+				r.Get("/", s.requestsHandler.Handle(s.requestsHandler.Blocklist))
+				r.Delete("/{ip}", s.requestsHandler.Handle(s.requestsHandler.BlocklistDelete))
+			})
 		})
 	})
 

@@ -21,6 +21,11 @@ export interface LogEntry {
   latencyMs: number;
 }
 
+export interface BlocklistEntry {
+  ip: string;
+  ttl: number;
+}
+
 export interface Summary {
   totalCount: number;
   attacksCount: number;

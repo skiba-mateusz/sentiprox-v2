@@ -9,7 +9,17 @@ import {
   type LogEntry,
   type PaginatedResult,
   type RequestsParams,
+  type BlocklistEntry,
 } from "@/types/api";
+
+function handleError(error: unknown): never {
+  if (isAxiosError<ApiFailure>(error)) {
+    const message = error.response?.data?.error ?? error.message;
+    throw new Error(message, { cause: error });
+  }
+
+  throw error;
+}
 
 async function get<T>(path: string, params?: RequestsParams): Promise<T> {
   try {
@@ -20,14 +30,15 @@ async function get<T>(path: string, params?: RequestsParams): Promise<T> {
 
     return res.data.data;
   } catch (error: unknown) {
-    if (isAxiosError<ApiFailure>(error)) {
-      console.log(error.response);
-      const message = error.response?.data?.error ?? error.message;
+    handleError(error);
+  }
+}
 
-      throw new Error(message, { cause: error });
-    }
-
-    throw error;
+async function remove(path: string): Promise<void> {
+  try {
+    await apiClient.delete(path);
+  } catch (error: unknown) {
+    handleError(error);
   }
 }
 
@@ -39,4 +50,7 @@ export const api = {
     get<Timeserie[]>("/requests/timeseries"),
   categories: (): Promise<Category[]> =>
     get<Category[]>("/requests/categories"),
+  blocklist: (): Promise<BlocklistEntry[]> =>
+    get<BlocklistEntry[]>("/requests/blocklist"),
+  blocklistDelete: (ip: string): Promise<void> => remove(`/requests/blocklist/${ip}`)
 };

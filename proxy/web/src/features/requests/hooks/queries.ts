@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { RequestsParams } from "@/types/api";
 
@@ -7,6 +7,7 @@ export const requestKeys = {
   summary: () => [...requestKeys.all, "summary"] as const,
   categories: () => [...requestKeys.all, "categories"] as const,
   timeseries: () => [...requestKeys.all, "timeseries"] as const,
+  blocklist: () => [...requestKeys.all, "blocklist"],
 };
 
 export const useLogs = (params: RequestsParams) => {
@@ -46,5 +47,23 @@ export const useTimeseries = () => {
     queryKey: requestKeys.timeseries(),
     queryFn: api.timeseries,
     refetchInterval: 30 * 1000,
+  });
+};
+
+export const useBlocklist = () => {
+  return useQuery({
+    queryKey: requestKeys.blocklist(),
+    queryFn: api.blocklist,
+    refetchInterval: 30 * 1000,
+  });
+};
+
+export const useBlocklistDelete = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (ip: string) => api.blocklistDelete(ip),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: requestKeys.blocklist() }),
   });
 };

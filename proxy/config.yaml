@@ -17,7 +17,7 @@ cache:
   bruteforce_max: 10
   scan_window_sec: 30
   scan_max: 30
-  block_ttl_sec: 10
+  block_ttl_sec: 300
 
 ml:
   addr: "http://localhost:8000"

@@ -16,7 +16,7 @@ export function ApiStatusBanner() {
 
   return (
     <div
-      className="tile status-dot status-dot--online"
+      className="status-dot status-dot--online"
       style={{ padding: "0.5rem 0.75rem" }}
     >
       Online

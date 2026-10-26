@@ -272,6 +272,7 @@ input[type="date"] {
   border: 1px solid var(--bg-slate-600);
   border-radius: 0.25em;
   color: var(--bg-slate-100);
+  font-weight: 500;
   cursor: pointer;
 }
 .btn:hover {
@@ -280,6 +281,15 @@ input[type="date"] {
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.btn.btn--secondary {
+  background-color: var(--bg-slate-100);
+  border: 1px solid var(--bg-slate-100);
+  color: var(--bg-slate-900);
+}
+.btn.btn.btn--secondary:hover {
+  opacity: 0.7;
 }
 
 .btn.btn--small {

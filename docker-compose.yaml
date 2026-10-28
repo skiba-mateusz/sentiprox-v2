@@ -24,13 +24,26 @@ services:
       - "8000:8000"
 
   proxy:
-    build: ./proxy
+    build:
+      context: ./proxy
+      dockerfile: ./Dockerfile
     ports:
       - "8080:8080"
     depends_on:
       - postgres
       - ml-service
+      - redis
       - dvwa
+
+  dashboard:
+    build:
+      context: ./proxy
+      dockerfile: ./Dockerfile.dashboard
+    ports:
+      - "8090:8090"
+    depends_on:
+      - postgres
+      - redis
 
   dvwa:
     image: vulnerables/web-dvwa:latest

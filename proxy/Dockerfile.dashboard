@@ -1,0 +1,27 @@
+FROM node:20-slim AS dashboard
+WORKDIR /dashboard
+
+COPY web/package*.json .
+RUN npm install
+
+COPY web/ .
+RUN npm run build
+
+FROM golang:1.27 AS build
+
+WORKDIR /src
+COPY . .
+COPY --from=dashboard /dashboard/dist ./web/dist
+RUN CGO_ENABLED=0 GOFLAGS=-mod=mod go build -o /api ./cmd/api/main.go
+
+FROM gcr.io/distroless/static-debian12
+
+COPY --from=build /api /api
+COPY --from=dashboard /dashboard/dist /web/dist
+
+COPY config.yaml /config.yaml
+
+ENV CONFIG=/config.yaml
+EXPOSE 8090
+
+ENTRYPOINT ["/api"]

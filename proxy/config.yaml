@@ -5,10 +5,10 @@ dashboard:
   addr: ":8090"
 
 database:
-  addr: "postgres://admin:password@localhost:5432/sentiprox?sslmode=disable"
+  addr: "postgres://admin:password@postgres:5432/sentiprox?sslmode=disable"
 
 cache:
-  addr: "localhost:6379"
+  addr: "redis:6379"
   pass: "password"
   db: 0
   dos_window_sec: 10
@@ -20,7 +20,7 @@ cache:
   block_ttl_sec: 300
 
 ml:
-  addr: "http://localhost:8000"
+  addr: "http://ml-service:8000"
   score: 0.5
   timeout_ms: 100
   fail_open: true
@@ -33,6 +33,6 @@ auth_paths:
 routes:
   - path: /
     type: pass
-    target: http://localhost:5000
+    target: http://dvwa:80
     ml_check: true
     behavioral_check: true
